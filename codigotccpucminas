@@ -1,0 +1,61 @@
+#Instalando a biblioteca pandas
+%pip install pandas
+---------------------------------------------------------------------------
+#Imports das bibliotecas
+import pandas as pd
+---------------------------------------------------------------------------
+#Colocando base do CSV em um DF
+df = pd.read_csv ('/content/base.csv',';')
+---------------------------------------------------------------------------
+%pip install great_expectations
+---------------------------------------------------------------------------
+import pandas as pd
+
+data = {'nome_coluna':  ['cd_ibge', 'id_familia', 'cod_calcamento_domic_fam', 'vlr_renda_media_fam', 'cd_ibge', 'cod_material_piso_fam', 'cod_material_piso_fam', 'cod_material_piso_fam', 'cod_agua_canalizada_fam','peso.fam', 'nom_estab_assist_saude_fam'],
+        'dimensao': ['Completude', 'Unicidade', 'Consistencia', 'Razoabilidade', 'Unicidade', 'Completude', 'Unicidade', 'Consistencia', 'Completude', 'Razoabilidade', 'Completude'],
+        'parametro':[None, None, [1,2,3], {'min': 0, 'max': 500}, None, None, None, [True, False], None, {'min': 4, 'max': 10}, None],
+        'percentual_esperado_corretos':[100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100]}
+
+df_rules = pd.DataFrame (data, columns = ['nome_coluna','dimensao', 'parametro','percentual_esperado_corretos'])
+display(df_rules)
+---------------------------------------------------------------------------
+import great_expectations as ge
+import json
+
+df_db = pd.read_csv('/content/base.csv',';')
+
+df_db = ge.dataset.PandasDataset(df_db)
+---------------------------------------------------------------------------
+df_rules['json_result'] = df_rules.apply(lambda row:
+                                  df_db.expect_column_values_to_not_be_null(row.nome_coluna).to_json_dict()
+                                  if row.dimensao == 'Completude'
+                                  else
+                                    (df_db.expect_column_values_to_be_unique(row.nome_coluna).to_json_dict()
+                                     if row.dimensao == 'Unicidade'
+                                     else
+                                      (df_db.expect_column_values_to_be_in_set(row.nome_coluna,row.parametro).to_json_dict()
+                                       if row.dimensao == 'Consistencia'
+                                       else
+                                        (df_db.expect_column_values_to_be_between(row.nome_coluna, row.parametro['min'], row.parametro['max']).to_json_dict()
+                                         if row.dimensao == 'Razoabilidade'
+                                         else None))), axis = 1)
+
+df_rules['resultado']= df_rules.apply(lambda row:
+                                       True if 100 - row.json_result['result']['unexpected_percent'] >= row.percentual_esperado_corretos
+                                            else False, axis=1)
+display(df_rules)
+---------------------------------------------------------------------------
+df = df_rules.groupby('dimensao')['dimensao'].count().reset_index(name='Count')
+por_tabela = df_rules.groupby(["resultado"])['resultado'].count().reset_index(name='Count')
+por_tabela = pd.pivot_table(por_tabela, values = 'Count', index=['resultado'], columns = 'resultado')
+por_dimensao = df_rules.groupby(["dimensao", "resultado"])['resultado'].count().reset_index(name='Count')
+por_dimensao = pd.pivot_table(por_dimensao, values = 'Count', index=['dimensao'], columns = 'resultado')
+por_coluna = df_rules.groupby(["nome_coluna", "resultado"])['resultado'].count().reset_index(name='Count')
+por_coluna = pd.pivot_table(por_coluna, values = 'Count', index=['nome_coluna'], columns = 'resultado')
+---------------------------------------------------------------------------
+ax = por_tabela.plot.barh(rot=0)
+---------------------------------------------------------------------------
+ax = por_dimensao.plot.barh(rot=0)
+---------------------------------------------------------------------------
+ax = por_coluna.plot.barh(rot=0)
+---------------------------------------------------------------------------
